@@ -3,9 +3,7 @@ package io.whitford.danstacks;
 import java.util.AbstractMap;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
-import java.util.Comparator;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.Iterator;
@@ -19,6 +17,7 @@ public class Interpreter {
 	private final Deque<String> words = new ArrayDeque<>();
 	private final Map<String, Runnable> primitives = new HashMap<>();
 	private final Map<String, List<String>> dictionary = new HashMap<>();
+	private final Deque<Boolean> controlFlowStack = new ArrayDeque<>();
 	private boolean immediate;
 	private AbstractMap.SimpleEntry<String, List<String>> compileFrame;
 
@@ -42,7 +41,7 @@ public class Interpreter {
 
 		primitives.put( ".", () -> System.out.printf( "%d ", dataStack.pop() ) );
 		primitives.put( "emit", () -> System.out.print( (char) dataStack.pop().intValue() ) );
-		primitives.put( "cr", () -> System.out.println() );
+		primitives.put( "cr", System.out::println );
 
 		primitives.put( "+", () -> dataStack.push( dataStack.pop() + dataStack.pop() ) );
 		primitives.put( "-", () -> dataStack.push( dataStack.pop() - dataStack.pop() ) );
@@ -71,6 +70,13 @@ public class Interpreter {
 			compileFrame = null;
 			immediate = true;
 		} );
+
+		primitives.put( "if", () -> {
+			var conditionWasTrue = !( dataStack.pop() == 0 );
+			controlFlowStack.push( conditionWasTrue );
+		} );
+		primitives.put( "endif", controlFlowStack::pop );
+		primitives.put( "else", () -> controlFlowStack.push( !controlFlowStack.pop() ) );
 	}
 
 	private void initDict() {
@@ -84,13 +90,22 @@ public class Interpreter {
 			}
 			var word = words.pop();
 
+			if ( !controlFlowStack.isEmpty() && !controlFlowStack.peek() ) {
+				if ( word.equals( "endif" ) ) {
+					primitives.get( "endif" ).run();
+				} else if ( word.equals( "else" ) ) {
+					primitives.get( "else" ).run();
+				}
+				continue;
+			}
+
 			try {
 				if ( !immediate ) {
 					if ( compileFrame == null ) {
 						compileFrame = new AbstractMap.SimpleEntry<>( word, new ArrayList<>() );
-					} else if (dictionary.containsKey( word )) {
+					} else if ( dictionary.containsKey( word ) ) {
 						compileFrame.getValue().addAll( dictionary.get( word ) );
-					} else if (word.equals( ";" )) {
+					} else if ( word.equals( ";" ) ) {
 						primitives.get( ";" ).run();
 					} else {
 						compileFrame.getValue().add( word );
